@@ -1,0 +1,10 @@
+{
+  "name": "friday-api",
+  "version": "1.0.0",
+  "description": "FRIDAY AI Backend API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-opencode": "curl -fsSL https://raw.githubusercontent.com/nicholasgonzalezsc/opencode/main/install.sh | sh"
+  }
+}
