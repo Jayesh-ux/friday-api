@@ -1,8 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const { spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,49 +7,57 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const SYSTEM_PROMPT = `You are FRIDAY - An intelligent, professional female AI assistant.
-Be concise, helpful, and friendly. Keep responses short (under 100 words) unless code is needed.
-Format code with proper syntax.`;
+const SYSTEM_PROMPT = `You are FRIDAY - A smart, friendly female AI assistant.
+Be concise, helpful, and friendly.`;
+
+// Smart demo responses
+function generateResponse(userMessage) {
+  const msg = userMessage.toLowerCase();
+  
+  if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey')) {
+    return "Hello! I'm FRIDAY, your AI assistant. How can I help you today?";
+  }
+  
+  if (msg.includes('who are you') || msg.includes('your name')) {
+    return "I'm FRIDAY - your personal AI assistant. I'm here to help you with coding, questions, and anything you need!";
+  }
+  
+  if (msg.includes('help')) {
+    return "I can help with:\n• Writing and debugging code\n• Answering questions\n• Explaining concepts\n\nJust ask!";
+  }
+  
+  if (msg.includes('code') || msg.includes('programming')) {
+    return "I can help with code! Tell me your language and what you're building. I work with JS, Python, React, and more.";
+  }
+  
+  return `I understand you're asking about: "${userMessage.substring(0, 50)}..."\n\n(Configure AI API for full responses)`;
+}
 
 // Health check
 app.get('/', (req, res) => {
   res.json({ 
     status: 'ok', 
     name: 'FRIDAY API',
-    version: '1.0.0',
-    poweredBy: 'opencode CLI'
+    version: '1.0'
   });
 });
 
-// Check if opencode is available
-app.get('/status', (req, res) => {
-  const opencodePath = findOpencode();
-  res.json({
-    opencode: opencodePath ? 'found' : 'not found',
-    path: opencodePath
-  });
-});
-
-// Chat endpoint using opencode CLI
+// Chat endpoint
 app.post('/chat', async (req, res) => {
   try {
-    const { messages, max_tokens = 500 } = req.body;
+    const { messages } = req.body || [];
 
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: 'Invalid messages format' });
-    }
-
-    // Get user message
-    const userMessage = messages.find(m => m.role === 'user');
+    const userMessage = messages?.find(m => m.role === 'user')?.content || '';
+    
     if (!userMessage) {
-      return res.status(400).json({ error: 'No user message found' });
+      return res.json({ 
+        choices: [{ message: { role: 'assistant', content: 'Send me a message!' } }]
+      });
     }
 
-    // Build prompt with system message
-    const fullPrompt = `${SYSTEM_PROMPT}\n\nUser: ${userMessage.content}`;
-
-    // Call opencode CLI
-    const response = await callOpencode(fullPrompt);
+    const response = generateResponse(userMessage);
+    const promptTokens = Math.ceil(userMessage.length / 4);
+    const completionTokens = Math.ceil(response.length / 4);
     
     res.json({
       choices: [{
@@ -62,92 +67,20 @@ app.post('/chat', async (req, res) => {
         }
       }],
       usage: {
-        prompt_tokens: fullPrompt.length / 4,
-        completion_tokens: response.length / 4,
-        total_tokens: (fullPrompt.length + response.length) / 4
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: promptTokens + completionTokens
       }
     });
 
   } catch (error) {
     console.error('Chat error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error', 
-      message: error.message 
+    res.json({ 
+      error: error.message 
     });
   }
 });
 
-// Find opencode executable
-function findOpencode() {
-  const possiblePaths = [
-    'opencode',
-    path.join(process.env.HOME || '', '.npm-global/bin/opencode'),
-    path.join(process.env.HOME || '', '.nvm/versions/node/v22.11.0/bin/opencode'),
-    '/usr/local/bin/opencode',
-    '/usr/bin/opencode',
-    path.join(__dirname, 'node_modules/.bin/opencode')
-  ];
-  
-  for (const p of possiblePaths) {
-    try {
-      if (fs.existsSync(p)) return p;
-    } catch (e) {}
-  }
-  return 'opencode'; // Default to PATH
-}
-
-// Call opencode CLI
-function callOpencode(prompt) {
-  return new Promise((resolve, reject) => {
-    const opencode = spawn(findOpencode(), [
-      '--model', 'claude',
-      '--no-stream',
-      prompt
-    ], {
-      env: { ...process.env }
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    opencode.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    opencode.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    opencode.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        // Try alternative approach - direct answer
-        if (stdout) {
-          resolve(stdout.trim());
-        } else {
-          reject(new Error(stderr || `opencode exited with code ${code}`));
-        }
-      }
-    });
-
-    opencode.on('error', (err) => {
-      reject(err);
-    });
-
-    // Timeout after 60 seconds
-    setTimeout(() => {
-      opencode.kill();
-      if (stdout) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error('opencode timed out'));
-      }
-    }, 60000);
-  });
-}
-
 app.listen(PORT, () => {
   console.log(`FRIDAY API running on port ${PORT}`);
-  console.log(`Using opencode CLI at: ${findOpencode()}`);
 });
